@@ -25,7 +25,14 @@ interactive command line input
 
 alphavantage allows for only 5 calls per minute and 500 calls per day
 create a timer and every time the api is called, check the time and if it is less than 12 seconds, wait until 12 seconds have passed
+
+
+create two modes for creating the pandas data frames
+1. extract from internet via alphavantage api
+2. read in pre-configured .csv files for testing of consecutive data processing
 """
+
+
 import sys as sys
 import time
 import csv
@@ -53,6 +60,15 @@ EARNINGS_keys = ['reportedEPS']
 
 strlist =['OVERVIEW', 'CASH_FLOW', 'BALANCE_SHEET', 'INCOME_STATEMENT', 'EARNINGS']
 annualkey = ['','annualReports', 'annualReports', 'annualReports', 'annualEarnings']
+
+
+#global variables to control whether data is 
+# extract_mode == 1: extracted via api calls, else read from file
+# process_mode == 1: processed to create rule1 data else do nothing
+# write_mode == 1: write_to_excel else write to csv
+extract_mode = 'FILE'  #'FILE', 'ALPHA'
+process_mode = 'RULE1' #'RULE1, NOTHING ELSE FOR NOW
+write_mode = 'EXCEL'   #'EXCEL', 'CSV'
 
 current_time = 0
 last_call = time.time() - 12
@@ -85,7 +101,7 @@ def request_ticker_information(symbol, key):
             exit()
         elif "Note" in data:
             status = data["Note"]
-            print(f'TimeOut Error? {status}')
+            print(f'Sleeping for 12 seconds due to alphavantage timout error! {status}')
             time.sleep(12)
         else:
             break
@@ -170,7 +186,7 @@ def initialize_pandas_data_frame():
     #print (df)
     return df
 
-def write_to_csv(symbol_data):
+def write_fundamental_data_to_excel(symbol_data):
     # Create an Excel writer object
     #make the file name unique by adding the current time
 
@@ -189,7 +205,6 @@ def write_to_csv(symbol_data):
     timestamp = now.strftime("%Y-%m-%d %H-%M-%S")
 
     file_path = os.path.join(directory, file_prefix + '_' + timestamp + '.xlsx')
-    # Add the timestamp to the file name
     writer = pd.ExcelWriter(file_path, engine='xlsxwriter')
 
     # Write each DataFrame in the dictionary to a separate worksheet/tab in the Excel file
@@ -199,6 +214,51 @@ def write_to_csv(symbol_data):
     # Save the Excel file
     writer.close()
 
+def write_fundamental_data_to_csv(symbol_data):
+    # Create an Excel writer object
+    #make the file name unique by adding the current time
+
+    directory = "stockdata"
+
+    if not os.path.exists(directory):
+        print('Cannot find local directory '+directory+', creating it!!!')    
+        os.makedirs(directory)
+
+    # write each dictionary item (symbol, df) to its own csv file named symbol.csv in the directory
+    for symbol, df in symbol_data.items():
+        file_path = os.path.join(directory, symbol + '.csv')
+        df.to_csv(file_path)
+
+def read_fundamental_data(symbols, symbol_data):
+    #read each csv file into a dataframe and add it to the dictionary
+    for symbol in symbols:
+        file_path = os.path.join('stockdata', symbol + '.csv')
+        df = pd.read_csv(file_path, index_col=0)
+        symbol_data[symbol] = df
+
+def extract_fundamental_data(symbols, symbol_data):
+    for symbol in symbols:
+        print('Fundamental data for symbol: ' + symbol)
+        ed = pd.DataFrame()
+        ed = initialize_pandas_data_frame()
+        print_current_stock_price(symbol, ed)
+        print_overview_data(symbol, ed)
+        print_balance_data(symbol, ed)
+        print_income_data(symbol, ed)
+        print_cashflow_data(symbol, ed)
+        #print_earnings_data(symbol, ed)
+        ed = ed.sort_index(axis=1, ascending=False)
+        #print(ed)
+        #ensure this iteration happens only once a minute
+        #time.sleep(60)
+
+        #add the data to a dictionary of 'Symbol': 'Dataframe'
+        symbol_data[symbol] = ed
+        #print(symbol_data)
+
+
+def process_fundamental_data(symbol_data):
+    return
 
 def main(sys):
     #print ('Entering Main Function')
@@ -220,27 +280,21 @@ def main(sys):
             symbols.append(symbol)
     
     print(symbols)
-    for symbol in symbols:
-        print('Fundamental data for symbol: ' + symbol)
-        ed = pd.DataFrame()
-        ed = initialize_pandas_data_frame()
-        print_current_stock_price(symbol, ed)
-        print_overview_data(symbol, ed)
-        print_balance_data(symbol, ed)
-        print_income_data(symbol, ed)
-        print_cashflow_data(symbol, ed)
-        #print_earnings_data(symbol, ed)
-        ed = ed.sort_index(axis=1, ascending=False)
-        print(ed)
-        #ensure this iteration happens only once a minute
-        #time.sleep(60)
+    if extract_mode == 1:
+        extract_fundamental_data(symbols, symbol_data)
+    else:
+        read_fundamental_data(symbols, symbol_data)
 
-        #add the data to a dictionary of 'Symbol': 'Dataframe'
-        symbol_data[symbol] = ed
-        print(symbol_data)
+    if process_mode == 1:
+        process_fundamental_data(symbols, symbol_data)
+    #else do nothing
 
-        write_to_csv(symbol_data)
-            
+    if write_mode == 1:
+        write_fundamental_data_to_excel(symbol_data)
+    else: write_fundamental_data_to_csv(symbol_data)
+
+    
+
 #------------------------------------------ MAIN ------------------------------------------
 
 #call the main function
